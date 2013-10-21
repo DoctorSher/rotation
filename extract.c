@@ -188,7 +188,7 @@ void pkt_search(u_char *args,
         ptr += 2;
     }
 
-    l->ipaddr = ip->saddr;
+    l->ipaddr = ip->daddr;
     l->id = id++;
 
     HASH_ADD_INT(hmap, id, l);
@@ -207,7 +207,8 @@ void print_hmap() {
     struct label *l;
     for (l=hmap; l != NULL; l = l->hh.next) {
         printf("****** LABEL %d *******\n",l->id);
-        printf("IP Address: %pI6", &l->ipaddr);
+        printf("IP Address: %s\n", 
+			   inet_ntoa(*(struct in_addr *)&l->ipaddr));
 		sm_enum(l->sm, iter, NULL);
         printf("-----------------------\n\n");
     }
