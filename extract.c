@@ -41,18 +41,9 @@ static int num_pkts = 0;
 static int num_tcp = 0;
 static int num_gets = 0;
 
-// void hmap_put(int id, uint32_t ipaddr, char *ua) {
-//     struct label *l;
-//     l = malloc(sizeof(struct label));
-
-//     l->id = id;
-//     l->ipaddr = ipaddr;
-//     strcpy(s->ua, ua);
-//     HASH_ADD_INT(hmap, id, s);  /* id: name of key field */
-// }
 
 void add_pair(StrMap *sm, char *buf) {
-    char *token, *cmd[10], *val;
+    char *token, *cmd[100], *val;
     int i = 0;
     int n_bytes = 0;
     int j;
@@ -78,8 +69,8 @@ void add_pair(StrMap *sm, char *buf) {
         strcpy(val, cmd[1]);
     }
 
-    printf("key: %s\n", cmd[0]);
-    printf("val: %s\n", val);
+    /* printf("key: %s\n", cmd[0]); */
+    /* printf("val: %s\n", val); */
 
     sm_put(sm, cmd[0], val);
 }
@@ -193,30 +184,37 @@ void pkt_search(u_char *args,
         add_pair(l->sm, buf);
         n_fields++;
 
-        if (*(uint32_t *)ptr == HF_END) return;
+        if (*(uint32_t *)ptr == HF_END) break;
         ptr += 2;
     }
 
     l->ipaddr = ip->saddr;
-    l->id = id;
-    
+    l->id = id++;
+
     HASH_ADD_INT(hmap, id, l);
 
     // free(l);
 }
 
+static void iter(const char *key, 
+				 const char *value, 
+				 const void *obj) 
+{
+	printf("\tkey: %s\tvalue: %s\n", key, value);
+}
+
 void print_hmap() {
     struct label *l;
-
     for (l=hmap; l != NULL; l = l->hh.next) {
         printf("****** LABEL %d *******\n",l->id);
         printf("IP Address: %pI6", &l->ipaddr);
+		sm_enum(l->sm, iter, NULL);
         printf("-----------------------\n\n");
     }
 }
 
 void print_stats() {
-    printf("\nStatistics:\n");
+    printf("Statistics:\n");
     printf("Number of packets processed: %d\n", num_pkts);
     printf("Number of IP datagrams processed: %d\n", num_ip);
     printf("Number of TCP segments processed: %d\n", num_tcp);
@@ -251,10 +249,9 @@ int main(int argc, char **argv) {
 
     pcap_close(handle);
 
-    // print_hmap();
+    print_hmap();
     print_stats();
-    // printf("hmap size: %u", HASH_COUNT(hmap));
-
+	printf("\n");
 
     return 0;
 }
