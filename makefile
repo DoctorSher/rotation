@@ -11,7 +11,7 @@ debug: ${PROGRAMS}
 extract: extract.o strmap.o
 	${CC} ${CFLAGS} -o extract extract.o strmap.o ${LDLIBS}
 
-extract.o: extract.c strmap.h uthash.h
+extract.o: extract.c strmap.h uthash.h extract.h
 	${CC} ${CFLAGS} -c extract.c
 
 strmap.o: strmap.c strmap.h

@@ -9,38 +9,17 @@
 #include <linux/ip.h>
 #include <linux/tcp.h>
 
-#include "uthash.h"
-#include "strmap.h"
-
-
-#define MAXSIZE 1000
-
-// double CRLF
-#define HF_END 168626701
-// single
-#define CRLF 2573
-
-// every possible spelling of "GET" 
-uint32_t getlist[8] = { 544499047, 542401895, 544490855, 542393703, 544499015, 542401863, 544490823, 542393671};
-
-// Every possible valid 4 byte spelling of "User" 
-uint32_t ualist[16] = { 1919251317, 1382380405, 1917154165, 1380283253, 1919243125, 1382372213, 1917145973, 1380275061, 1919251285, 1382380373, 1917154133, 1380283221, 1919243093, 1382372181, 1917145941, 1380275029};
-
-struct label {
-    int            id;      // each labels unique ID
-    uint32_t       ipaddr;  // the src IP address
-    StrMap         *sm;     // associative array for header fields
-    UT_hash_handle hh;      // hash handle necessary for UThash
-};
-
-struct label *hmap = NULL;
+#include "extract.h"
 
 /* COUNTERS */
-static int num_ip = 0;
-static int num_pkts = 0; 
-static int num_tcp = 0;
-static int num_gets = 0;
+int num_ip = 0;
+int num_pkts = 0; 
+int num_tcp = 0;
+int num_gets = 0;
+int num_fields = 0;
 
+/* Hash map for header labels */
+struct label *hmap = NULL;
 
 void add_pair(StrMap *sm, char *buf) {
     char *token, *cmd[100], *val;
@@ -69,14 +48,11 @@ void add_pair(StrMap *sm, char *buf) {
         strcpy(val, cmd[1]);
     }
 
-    /* printf("key: %s\n", cmd[0]); */
-    /* printf("val: %s\n", val); */
-
     sm_put(sm, cmd[0], val);
 }
 
 int extract_hline(uint8_t *ptr, char *buf, size_t size) {
-    int i = 0;
+    unsigned int i = 0;
     while (*(uint16_t *)ptr != CRLF) {
         if (i == size) return -1;
 
@@ -96,7 +72,7 @@ void pkt_search(u_char *args,
     static int id = 0;
     char buf[MAXSIZE];
     int getflag = 0;
-    int i, n_fields;
+    int i;
     uint8_t *ptr, *base;
     struct ether_header *eth;
 	struct iphdr *ip;
@@ -151,7 +127,7 @@ void pkt_search(u_char *args,
     // printf("%s",buf);
 
     // the number of fields that each header will contain
-    n_fields = 0;    
+    num_fields = 0;    
 
     // need to figure out how many fields to allocate for
     base = ptr;
@@ -159,14 +135,14 @@ void pkt_search(u_char *args,
         while (*(uint16_t *)base != CRLF) {
             base++;
         }
-        n_fields++;
+        num_fields++;
         
         if (*(uint32_t *)base == HF_END) break;
         base += 2;
     }
 
     // start up string mapping
-    l->sm = sm_new(n_fields);
+    l->sm = sm_new(num_fields);
     if (l->sm == NULL) {
         fprintf(stderr, "Error creating string map\n");
     }
@@ -182,7 +158,7 @@ void pkt_search(u_char *args,
         buf[i] = '\0';
         // printf("%s\n",buf);
         add_pair(l->sm, buf);
-        n_fields++;
+        num_fields++;
 
         if (*(uint32_t *)ptr == HF_END) break;
         ptr += 2;
@@ -201,6 +177,17 @@ static void iter(const char *key,
 				 const void *obj) 
 {
 	printf("\tkey: %s\tvalue: %s\n", key, value);
+}
+
+void print_csv() {
+    struct label *l;
+    for (l=hmap; l != NULL; l = l->hh.next) {
+        printf("****** LABEL %d *******\n",l->id);
+        printf("IP Address: %s\n", 
+			   inet_ntoa(*(struct in_addr *)&l->ipaddr));
+		sm_enum(l->sm, iter, NULL);
+        printf("-----------------------\n\n");
+    }
 }
 
 void print_hmap() {
@@ -256,3 +243,4 @@ int main(int argc, char **argv) {
 
     return 0;
 }
+
