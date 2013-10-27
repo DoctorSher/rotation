@@ -10,6 +10,7 @@
 #include <linux/tcp.h>
 
 #include "extract.h"
+#include "defs.h"
 
 /* COUNTERS */
 int num_ip = 0;
