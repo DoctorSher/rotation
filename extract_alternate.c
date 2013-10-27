@@ -1,52 +1,3 @@
-/* IMPORTANT:
- * The output of a signature will be a list of numbers.
- * The list must be the same length regardless of the number of header fields,
- * so we need to allow it to encompass all possible headers.  This is because 
- * libsvm requires fixed sized input.  
- * 
- * Though the list will actually output to stdout in csv format, 
- * we will picture it as a vertical vector.
- *
- * The main part of the output will tell us if the header field was found in 
- * that particular HTTP header, and if so at what index of the header fields?
- * This is because different browsers include different header fields and in
- * different orders.
- * 
- * A 0 designates that the header field was not present in the header. 
- * A 1 through num_fields indicates the order, with 1 being the first field 
- * found in the header and num_fields being the last field found.
- * 
- * |-----|  |--------------------|
- * |  0  |  |       Accept       | 
- * |  2  |  |    Accept-Charset  |
- * |  5  |  |   Accept-Language  |
- * |  0  |  |        Base        |
- * |  0  |  |    Cache-Control   |
- * |  1  |  |  Content-Encoding  |
- * |  3  |  |   Content-Length   |
- * |  0  |  |     Content-MD5    |
- * |  4  |  |     Content-Range  |
- * |  .  |  |          .         |
- * |  .  |  |          .         |
- * |  .  |  |          .         |
- * |-----|  |--------------------|
- *
- * Let it be known that the example is not true to the HTTP Spec,
- * but the program will be.
- *
- * There will be two more numbers in the output.
- * The first is the id value of that particular header.
- * The second is metadata about how many header fields were contained in 
- * that header.
- *
- * The true format of the output is like so:
- * [id],[number of header fields]:[csv]
- *
- * Example:
- * 4,5:0,1,0,1,1,0,0,0,0,4,0,3,0,0,0,2,0,1,...
- */
-
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -61,7 +12,6 @@
 #include "extract.h"
 #include "defs.h"
 
-
 /* COUNTERS */
 int num_ip = 0;
 int num_pkts = 0; 
@@ -72,8 +22,7 @@ int num_fields = 0;
 /* Hash map for header labels */
 struct label *hmap = NULL;
 
-/* Array for header signature */
-int order[HTTP_MAX_FIELDS];
+struct field fields[HTTP_MAX_FIELDS];
 
 void add_pair(StrMap *sm, char *buf) {
     char *token, *cmd[100], *val;
@@ -237,244 +186,279 @@ void zero_arr() {
 	/* } */
 
 	/* printf("in zero arr\n"); */
-	memset(order, 0, HTTP_MAX_FIELDS * sizeof(int));
+	memset(fields, 0, HTTP_MAX_FIELDS * sizeof(struct field));
 }
 
 static void sigify(const char *key, 
 				   const char *value, 
 				   const void *obj) 
 {
-	static unsigned int inc = 1;
-	unsigned int idx = inc - *(unsigned int *)obj;
-
+	static int idx = 1;
 	if (strncmp(key, "Accept",
 				strlen("Accept")) == 0) 
 	{
-		/* Needed to move these cases inside.
-		 * While they were on the outside, this if statement would be true 
-		 * for the rest of them, so it would eat the selection and set an 
-		 * incorrect value on a duplicate entry.
-		 *
-		 * To visualize, test this code on the "Accept-Language" header field.
-		 */
-		if(strncmp(key, "Accept-Charset", 
-				   strlen("Accept-Charset")) == 0) 
-		{
-			order[ACCEPT_CHARSET] = idx;
-		}
-		else if(strncmp(key, "Accept-Encoding", 
-						strlen("Accept-Encoding")) == 0)
-		{
-			order[ACCEPT_ENCODING] = idx;
-		}
-		else if(strncmp(key, "Accept-Language", 
-						strlen("Accept-Language")) == 0)
-		{
-			order[ACCEPT_LANGUAGE] = idx;
-		}
-		else order[ACCEPT] = idx;
+		fields[ACCEPT].idx = idx - *(unsigned int *)obj;
+		fields[ACCEPT].hdr = 1;
 	} 
+	else if(strncmp(key, "Accept-Charset", 
+					strlen("Accept-Charset")) == 0) 
+	{
+		fields[ACCEPT_CHARSET].idx = idx - *(unsigned int *)obj;
+		fields[ACCEPT_CHARSET].hdr = 1;
+	}
+	else if(strncmp(key, "Accept-Encoding", 
+					strlen("Accept-Encoding")) == 0)
+	{
+		fields[ACCEPT_ENCODING].idx = idx - *(unsigned int *)obj;
+		fields[ACCEPT_ENCODING].hdr = 1;
+	}
+	else if(strncmp(key, "Accept-Language", 
+					strlen("Accept-Language")) == 0)
+	{
+		fields[ACCEPT_LANGUAGE].idx = idx - *(unsigned int *)obj;
+		fields[ACCEPT_LANGUAGE].hdr = 1;
+	}
 	else if(strncmp(key, "Allow", 
 					strlen("Allow")) == 0)
 	{
-		order[ALLOW] = idx;
+		fields[ALLOW].idx = idx - *(unsigned int *)obj;
+		fields[ALLOW].hdr = 1;
 	}
 	else if(strncmp(key, "Authorization", 
 					strlen("Authorization")) == 0)
 	{
-		order[AUTHORIZATION] = idx;
+		fields[AUTHORIZATION].idx = idx - *(unsigned int *)obj;
+		fields[AUTHORIZATION].hdr = 1;
 	}
 	else if(strncmp(key, "Base", 
 					strlen("Base")) == 0)
 	{
-		order[BASE] = idx;
+		fields[BASE].idx = idx - *(unsigned int *)obj;
+		fields[BASE].hdr = 1;
 	}
 	else if(strncmp(key,"Cache-Control", 
 					strlen("Cache-Control")) == 0)
 	{
-		order[CACHE_CONTROL] = idx;
+		fields[CACHE_CONTROL].idx = idx - *(unsigned int *)obj;
+		fields[CACHE_CONTROL].hdr = 1;
 	}
 	else if(strncmp(key,"Connection", 
 					strlen("Connection")) == 0)
 	{
-		order[CONNECTION] = idx;
+		fields[CONNECTION].idx = idx - *(unsigned int *)obj;
+		fields[CONNECTION].hdr = 1;
 	}
 	else if(strncmp(key,"Content-Encoding", 
 					strlen("Content-Encoding")) == 0)
 	{
-		order[CONTENT_ENCODING] = idx;
+		fields[CONTENT_ENCODING].idx = idx - *(unsigned int *)obj;
+		fields[CONTENT_ENCODING].hdr = 1;
 	}
 	else if(strncmp(key,"Content-Language", 
 					strlen("Content-Language")) == 0)
 	{
-		order[CONTENT_LANGUAGE] = idx;
+		fields[CONTENT_LANGUAGE].idx = idx - *(unsigned int *)obj;
+		fields[CONTENT_LANGUAGE].hdr = 1;
 	}
 	else if(strncmp(key,"Content-Length",
 					strlen("Content-Length")) == 0)
 	{
-		order[CONTENT_LENGTH] = idx;
+		fields[CONTENT_LENGTH].idx = idx - *(unsigned int *)obj;
+		fields[CONTENT_LENGTH].hdr = 1;
 	}
 	else if(strncmp(key,"Content-MD5",
 					strlen("Content-MD5")) == 0)
 	{
-		order[CONTENT_MD5] = idx;
+		fields[CONTENT_MD5].idx = idx - *(unsigned int *)obj;
+		fields[CONTENT_MD5].hdr = 1;
 	}
 	else if(strncmp(key,"Content-Range",
 					strlen("Content-Range")) == 0)
 	{
-		order[CONTENT_RANGE] = idx;
+		fields[CONTENT_RANGE].idx = idx - *(unsigned int *)obj;
+		fields[CONTENT_RANGE].hdr = 1;
 	}
 	else if(strncmp(key,"Content-Type",
 					strlen("Content-Type")) == 0)
 	{
-		order[CONTENT_TYPE] = idx;
+		fields[CONTENT_TYPE].idx = idx - *(unsigned int *)obj;
+		fields[CONTENT_TYPE].hdr = 1;
 	}
 	else if(strncmp(key,"Content-Version",
 					strlen("Content-Version")) == 0)
 	{
-		order[CONTENT_VERSION] = idx;
+		fields[CONTENT_VERSION].idx = idx - *(unsigned int *)obj;
+		fields[CONTENT_VERSION].hdr = 1;
 	}
 	else if(strncmp(key,"Date",
 					strlen("Date")) == 0)
 	{
-		order[DATE] = idx;
+		fields[DATE].idx = idx - *(unsigned int *)obj;
+		fields[DATE].hdr = 1;
 	}
 	else if(strncmp(key,"Derived-From",
 					strlen("Derived-From")) == 0)
 	{
-		order[DERIVED_FROM] = idx;
+		fields[DERIVED_FROM].idx = idx - *(unsigned int *)obj;
+		fields[DERIVED_FROM].hdr = 1;
 	}
 	else if(strncmp(key,"Expires",
 					strlen("Expires")) == 0)
 	{
-		order[EXPIRES] = idx;
+		fields[EXPIRES].idx = idx - *(unsigned int *)obj;
+		fields[EXPIRES].hdr = 1;
 	}
 	else if(strncmp(key,"Forwarded",
 					strlen("Forwarded")) == 0)
 	{
-		order[FORWARDED] = idx;
+		fields[FORWARDED].idx = idx - *(unsigned int *)obj;
+		fields[FORWARDED].hdr = 1;
 	}
 	else if(strncmp(key,"From",
 					strlen("From")) == 0)
 	{
-		order[FROM] = idx;
+		fields[FROM].idx = idx - *(unsigned int *)obj;
+		fields[FROM].hdr = 1;
 	}
 	else if(strncmp(key,"Host",
 					strlen("Host")) == 0)
 	{
-		order[HOST] = idx;
+		fields[HOST].idx = idx - *(unsigned int *)obj;
+		fields[HOST].hdr = 1;
 	}
 	else if(strncmp(key,"If-Modified-Since",
 					strlen("If-Modified-Since")) == 0)
 	{
-		order[IF_MODIFIED_SINCE] = idx;
+		fields[IF_MODIFIED_SINCE].idx = idx - *(unsigned int *)obj;
+		fields[IF_MODIFIED_SINCE].hdr = 1;
 	}
 	else if(strncmp(key,"Keep-Alive",
 					strlen("Keep-Alive")) == 0)
 	{
-		order[KEEP_ALIVE] = idx;
+		fields[KEEP_ALIVE].idx = idx - *(unsigned int *)obj;
+		fields[KEEP_ALIVE].hdr = 1;
 	}
 	else if(strncmp(key,"Last-Modified",
 					strlen("Last-Modified")) == 0)
 	{
-		order[LAST_MODIFIED] = idx;
+		fields[LAST_MODIFIED].idx = idx - *(unsigned int *)obj;
+		fields[LAST_MODIFIED].hdr = 1;
 	}
 	else if(strncmp(key,"Link",
 					strlen("Link")) == 0)
 	{
-		order[LINK] = idx;
+		fields[LINK].idx = idx - *(unsigned int *)obj;
+		fields[LINK].hdr = 1;
 	}
 	else if(strncmp(key,"Location",
 					strlen("Location")) == 0)
 	{
-		order[LOCATION] = idx;
+		fields[LOCATION].idx = idx - *(unsigned int *)obj;
+		fields[LOCATION].hdr = 1;
 	}
 	else if(strncmp(key,"MIME-Version",
 					strlen("MIME-Version")) == 0)
 	{
-		order[MIME_VERSION] = idx;
+		fields[MIME_VERSION].idx = idx - *(unsigned int *)obj;
+		fields[MIME_VERSION].hdr = 1;
 	}
 	else if(strncmp(key,"Pragma",
 					strlen("Pragma")) == 0)
 	{
-		order[PRAGMA] = idx;
+		fields[PRAGMA].idx = idx - *(unsigned int *)obj;
+		fields[PRAGMA].hdr = 1;
 	}
 	else if(strncmp(key,"Proxy-Authenticate",
 					strlen("Proxy-Authenticate")) == 0)
 	{
-		order[PROXY_AUTHENTICATE] = idx;
+		fields[PROXY_AUTHENTICATE].idx = idx - *(unsigned int *)obj;
+		fields[PROXY_AUTHENTICATE].hdr = 1;
 	}
 	else if(strncmp(key,"Proxy-Authorization",
 					strlen("Proxy-Authorization")) == 0)
 	{
-		order[PROXY_AUTHORIZATION] = idx;
+		fields[PROXY_AUTHORIZATION].idx = idx - *(unsigned int *)obj;
+		fields[PROXY_AUTHORIZATION].hdr = 1;
 	}
 	else if(strncmp(key,"Public",
 					strlen("Public")) == 0)
 	{
-		order[PUBLIC] = idx;
+		fields[PUBLIC].idx = idx - *(unsigned int *)obj;
+		fields[PUBLIC].hdr = 1;
 	}
 	else if(strncmp(key,"Range",
 					strlen("Range")) == 0)
 	{
-		order[RANGE] = idx;
+		fields[RANGE].idx = idx - *(unsigned int *)obj;
+		fields[RANGE].hdr = 1;
 	}
 	else if(strncmp(key,"Referer",
 					strlen("Referer")) == 0)
 	{
-		order[REFERER] = idx;
+		fields[REFERER].idx = idx - *(unsigned int *)obj;
+		fields[REFERER].hdr = 1;
 	}
 	else if(strncmp(key,"Refresh",
 					strlen("Refresh")) == 0)
 	{
-		order[REFRESH] = idx;
+		fields[REFRESH].idx = idx - *(unsigned int *)obj;
+		fields[REFRESH].hdr = 1;
 	}
 	else if(strncmp(key,"Retry-After",
 					strlen("Retry-After")) == 0)
 	{
-		order[RETRY_AFTER] = idx;
+		fields[RETRY_AFTER].idx = idx - *(unsigned int *)obj;
+		fields[RETRY_AFTER].hdr = 1;
 	}
 	else if(strncmp(key,"Server",
 					strlen("Server")) == 0)
 	{
-		order[SERVER] = idx;
+		fields[SERVER].idx = idx - *(unsigned int *)obj;
+		fields[SERVER].hdr = 1;
 	}
 	else if(strncmp(key,"Title",
 					strlen("Title")) == 0)
 	{
-		order[TITLE] = idx;
+		fields[TITLE].idx = idx - *(unsigned int *)obj;
+		fields[TITLE].hdr = 1;
 	}
 	else if(strncmp(key,"Transfer Encoding",
 					strlen("Transfer Encoding")) == 0)
 	{
-		order[TRANSFER_ENCODING] = idx;
+		fields[TRANSFER_ENCODING].idx = idx - *(unsigned int *)obj;
+		fields[TRANSFER_ENCODING].hdr = 1;
 	}
 	else if(strncmp(key,"Unless",
 					strlen("Unless")) == 0)
 	{
-		order[UNLESS] = idx;
+		fields[UNLESS].idx = idx - *(unsigned int *)obj;
+		fields[UNLESS].hdr = 1;
 	}
 	else if(strncmp(key,"Upgrade",
 					strlen("Upgrade")) == 0)
 	{
-		order[UPGRADE] = idx;
+		fields[UPGRADE].idx = idx - *(unsigned int *)obj;
+		fields[UPGRADE].hdr = 1;
 	}
 	else if(strncmp(key,"URI",
 					strlen("URI")) == 0)
 	{
-		order[URI] = idx;
+		fields[URI].idx = idx - *(unsigned int *)obj;
+		fields[URI].hdr = 1;
 	}
 	else if(strncmp(key,"User-Agent",
 					strlen("User-Agent")) == 0)
 	{
-		order[USER_AGENT] = idx;
+		fields[USER_AGENT].idx = idx - *(unsigned int *)obj;
+		fields[USER_AGENT].hdr = 1;
 	}
 	else if(strncmp(key,"WWW-Authenticate",
 					strlen("WWW-Authenticate")) == 0)
 	{
-		order[WWW_AUTHENTICATE] = idx;
+		fields[WWW_AUTHENTICATE].idx = idx - *(unsigned int *)obj;
+		fields[WWW_AUTHENTICATE].hdr = 1;
 	}
-	++inc;
+	++idx;
 }
 
 static void iter(const char *key, 
@@ -490,16 +474,28 @@ void print_csv() {
     for (l=hmap; l != NULL; l = l->hh.next) {
 		zero_arr();
 
-		printf("%d,%d:",l->id, l->num);
+		printf("%d:",l->id);
 		sm_enum(l->sm, sigify, &num);
 		num += l->num;
 
-		/* Did it exist in the header fields? What index was it at? */
-		for (i = 0; i < HTTP_MAX_FIELDS - 1; i++) {
-			printf("%d,",order[i]);
+		/* PART 1 - Did it exist in the header fields */
+		for (i = 0; i < HTTP_MAX_FIELDS; i++) {
+			printf("%d,",fields[i].hdr);
 		}
-		++i;
-		printf("%d\n",order[i]);
+		
+		printf("\n");
+
+		/* PART 2 - In what order? */
+		for (i = 0; i < HTTP_MAX_FIELDS; i++) {
+			printf("%d,",fields[i].idx);
+		}
+
+		printf("\n");
+		
+		/* PART 3 - METADATA */
+		printf("%d\n",l->num);
+
+		printf("\n\n");
     }
 }
 
@@ -564,10 +560,6 @@ int main(int argc, char **argv) {
     /* print_stats(); */
 	/* printf("\n"); */
 	print_csv();
-	printf("\n");
-	print_stats();
-	printf("\n");
-
 
 	cleanup();
 
