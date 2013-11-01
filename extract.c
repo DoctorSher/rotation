@@ -248,7 +248,18 @@ void pkt_search(u_char *args,
         }
 
         buf[i] = '\0';
-        add_pair(l->sm, buf);
+		/* The Cookie keyword is not an HTML header field, but 
+		 * it will be read as one and throw off our count. So,
+		 * we only add the text if it's NOT the Cookie field,
+		 * and if it is then we decrement our count by 1 so it
+		 * is true to the number of HTTP header fields.
+		 */
+        if ((strlen(buf) >= strlen("Cookie")) &&
+			(strncmp(buf,"Cookie",strlen("Cookie")) != 0)) {
+			add_pair(l->sm, buf);
+		} else {
+			num_fields--;
+		}
 
         if (*(uint32_t *)ptr == HF_END) break;
         ptr += 2;
