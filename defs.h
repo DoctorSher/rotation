@@ -1,6 +1,12 @@
 #ifndef DEFS_H
 #define DEFS_H
 
+/* Number of HTTP header fields */
+#define HTTP_MAX_FIELDS 44
+
+/* Number of values in the CSV output */
+#define CSV_OUT_LEN 89
+
 /* Array Indices */
 #define ACCEPT 0
 #define ACCEPT_CHARSET 1
@@ -46,53 +52,6 @@
 #define URI 41
 #define USER_AGENT 42
 #define WWW_AUTHENTICATE 43
-
-#define HTTP_MAX_FIELDS 44
-
- /* ACCEPT */
- /* ACCEPT_CHARSET */
- /* ACCEPT_ENCODING */
- /* ACCEPT_LANGUAGE */
- /* ALLOW */
- /* AUTHORIZATION */
- /* BASE */
- /* CACHE_CONTROL */
- /* CONNECTION */
- /* CONTENT_ENCODING */
- /* CONTENT_LANGUAGE */
- /* CONTENT_LENGTH */
- /* CONTENT_MD5 */
- /* CONTENT_RANGE */
- /* CONTENT_TYPE */
- /* CONTENT_VERSION */
- /* DATE */
- /* DERIVED_FROM */
- /* EXPIRES */
- /* FORWARDED */
- /* FROM */
- /* HOST */
- /* IF_MODIFIED_SINCE */
- /* KEEP_ALIVE */
- /* LAST_MODIFIED */
- /* LINK */
- /* LOCATION */
- /* MIME_VERSION */
- /* PRAGMA */
- /* PROXY_AUTHENTICATE */
- /* PROXY_AUTHORIZATION */
- /* PUBLIC */
- /* RANGE */
- /* REFERER */
- /* REFRESH */
- /* RETRY_AFTER */
- /* SERVER */
- /* TITLE */
- /* TRANSFER_ENCODING */
- /* UNLESS */
- /* UPGRADE */
- /* URI */
- /* USER_AGENT */
- /* WWW_AUTHENTICATE */
 
 #endif /* defs.h */
 

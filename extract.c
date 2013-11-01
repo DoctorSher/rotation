@@ -1,3 +1,9 @@
+/* Usage: extract pcap [csv] [out]
+ *  <pcap> is the packet capture file to be supplied as input
+ *  <csv> is the name of the csv output file created by the program
+ *  <out> is the name of the output file for the User-Agent strings
+ */
+
 /* IMPORTANT:
  * The output of a signature will be a list of numbers.
  * The list must be the same length regardless of the number of header fields,
@@ -13,37 +19,63 @@
  * different orders.
  * 
  * A 0 designates that the header field was not present in the header. 
- * A 1 through num_fields indicates the order, with 1 being the first field 
- * found in the header and num_fields being the last field found.
+ * A 1 indicates that the field exists in the header.
  * 
  * |-----|  |--------------------|
  * |  0  |  |       Accept       | 
- * |  2  |  |    Accept-Charset  |
- * |  5  |  |   Accept-Language  |
+ * |  1  |  |    Accept-Charset  |
+ * |  1  |  |   Accept-Language  |
  * |  0  |  |        Base        |
  * |  0  |  |    Cache-Control   |
  * |  1  |  |  Content-Encoding  |
- * |  3  |  |   Content-Length   |
+ * |  1  |  |   Content-Length   |
  * |  0  |  |     Content-MD5    |
- * |  4  |  |     Content-Range  |
+ * |  1  |  |     Content-Range  |
  * |  .  |  |          .         |
  * |  .  |  |          .         |
  * |  .  |  |          .         |
  * |-----|  |--------------------|
  *
  * Let it be known that the example is not true to the HTTP Spec,
- * but the program will be.
+ * but the program is.
  *
- * There will be two more numbers in the output.
- * The first is the id value of that particular header.
- * The second is metadata about how many header fields were contained in 
- * that header.
+ * The second part of the output is the same length, and zeros still denote 
+ * that the header field did not appear in the current header.  This time,
+ * the number 1 is replaced with the number header field it is in reference
+ * to defs.h. HOWEVER, THE NUMBER IN THE OUTPUT WILL BE ONE LARGER THAN THE 
+ * ACTUAL #DEFINE VALUE IN DEFS.H! Also, the numbers show up in order of 
+ * appearance. The output is the same length (they are padded by zeroes) for
+ * libsvm purposes. An example is shown below. I suggest opening defs.h for
+ * reference.  Note in particular that 2 in the output denotes Accept-Charset,
+ * which is a 1 in defs.h.  This is the trickery we are talking about. 
  *
- * The true format of the output is like so:
- * [id],[number of header fields]:[csv]
+ * |-----|  |--------------------|
+ * |  2  |  |    Accept-Charset  |
+ * |  43 |  |     User-Agent     |
+ * |  10 |  |  Content-Encoding  |
+ * |  12 |  |   Content-Length   |
+ * |  0  |  |                    |
+ * |  0  |  |                    |
+ * |  .  |  |                    |
+ * |  .  |  |                    |
+ * |  .  |  |                    |
+ * |-----|  |--------------------|
+ *
+ * This example means that the headers appeared in the order of:
+ * Accept-Charset, User-Agent, Content-Encoding, and Content-Length.
+ * No other header fields were included, which we know because the zeros
+ * start occuring.
+ *
+ * Lastly, there is one number at the start of these two csv parts, which
+ * represents the number of header fields. It could be easily gleamed from 
+ * the csv, but it will be easier to use if it is at the start.
+ *
+ * So, just to recap, the true format of the output is like so:
+ * Size:    1 num                 44 nums            44 nums
+ * [number of header fields],[csv for existence],[csv for order]
  *
  * Example:
- * 4,5:0,1,0,1,1,0,0,0,0,4,0,3,0,0,0,2,0,1,...
+ * 5:0,1,0,1,1,0,0,0,0,1,0,1,0,0,0,0,...,2,6,14,42,9,0,0,0,0...
  */
 
 
@@ -72,7 +104,8 @@ int num_fields = 0;
 /* Hash map for header labels */
 struct label *hmap = NULL;
 
-/* Array for header signature */
+/* Arrays for header signature */
+int exists[HTTP_MAX_FIELDS];
 int order[HTTP_MAX_FIELDS];
 
 void add_pair(StrMap *sm, char *buf) {
@@ -108,7 +141,6 @@ void add_pair(StrMap *sm, char *buf) {
 	sm_put(sm, literal1, literal2);
 	
 	free(val);
-	// sm_put(sm, cmd[0], val);
 }
 
 int extract_hline(uint8_t *ptr, char *buf, size_t size) {
@@ -229,22 +261,11 @@ void pkt_search(u_char *args,
     HASH_ADD_INT(hmap, id, l);
 }
 
-void zero_arr() {
-	/* int i; */
-	/* for (i = 0; i < HTTP_MAX_FIELDS; i++) { */
-	/* 	fields[i].hdr = 0; */
-	/* 	fields[i].idx = 0; */
-	/* } */
-
-	/* printf("in zero arr\n"); */
-	memset(order, 0, HTTP_MAX_FIELDS * sizeof(int));
-}
-
 static void sigify(const char *key, 
 				   const char *value, 
 				   const void *obj) 
 {
-	static unsigned int inc = 1;
+	static unsigned int inc = 0;
 	unsigned int idx = inc - *(unsigned int *)obj;
 
 	if (strncmp(key, "Accept",
@@ -260,219 +281,265 @@ static void sigify(const char *key,
 		if(strncmp(key, "Accept-Charset", 
 				   strlen("Accept-Charset")) == 0) 
 		{
-			order[ACCEPT_CHARSET] = idx;
+			exists[ACCEPT_CHARSET] = 1;
+			order[idx] = ACCEPT_CHARSET + 1;
 		}
 		else if(strncmp(key, "Accept-Encoding", 
 						strlen("Accept-Encoding")) == 0)
 		{
-			order[ACCEPT_ENCODING] = idx;
+			exists[ACCEPT_ENCODING] = 1;
+			order[idx] = ACCEPT_ENCODING + 1;
 		}
 		else if(strncmp(key, "Accept-Language", 
 						strlen("Accept-Language")) == 0)
 		{
-			order[ACCEPT_LANGUAGE] = idx;
+			exists[ACCEPT_LANGUAGE] = 1;
+			order[idx] = ACCEPT_LANGUAGE + 1;
 		}
-		else order[ACCEPT] = idx;
+		else { 
+			exists[ACCEPT] = 1;
+			order[idx] = ACCEPT + 1;
+		}
 	} 
 	else if(strncmp(key, "Allow", 
 					strlen("Allow")) == 0)
 	{
-		order[ALLOW] = idx;
+		exists[ALLOW] = 1;
+		order[idx] = ALLOW + 1;
 	}
 	else if(strncmp(key, "Authorization", 
 					strlen("Authorization")) == 0)
 	{
-		order[AUTHORIZATION] = idx;
+		exists[AUTHORIZATION] = 1;
+		order[idx] = AUTHORIZATION + 1;
 	}
 	else if(strncmp(key, "Base", 
 					strlen("Base")) == 0)
 	{
-		order[BASE] = idx;
+		exists[BASE] = 1;
+		order[idx] = BASE + 1;
 	}
 	else if(strncmp(key,"Cache-Control", 
 					strlen("Cache-Control")) == 0)
 	{
-		order[CACHE_CONTROL] = idx;
+		exists[CACHE_CONTROL] = 1;
+		order[idx] = CACHE_CONTROL + 1;
 	}
 	else if(strncmp(key,"Connection", 
 					strlen("Connection")) == 0)
 	{
-		order[CONNECTION] = idx;
+		exists[CONNECTION] = 1;
+		order[idx] = CONNECTION + 1;
 	}
 	else if(strncmp(key,"Content-Encoding", 
 					strlen("Content-Encoding")) == 0)
 	{
-		order[CONTENT_ENCODING] = idx;
+		exists[CONTENT_ENCODING] = 1;
+		order[idx] = CONTENT_ENCODING + 1;
 	}
 	else if(strncmp(key,"Content-Language", 
 					strlen("Content-Language")) == 0)
 	{
-		order[CONTENT_LANGUAGE] = idx;
+		exists[CONTENT_LANGUAGE] = 1;
+		order[idx] = CONTENT_LANGUAGE + 1;
 	}
 	else if(strncmp(key,"Content-Length",
 					strlen("Content-Length")) == 0)
 	{
-		order[CONTENT_LENGTH] = idx;
+		exists[CONTENT_LENGTH] = 1;
+		order[idx] = CONTENT_LENGTH + 1;
 	}
 	else if(strncmp(key,"Content-MD5",
 					strlen("Content-MD5")) == 0)
 	{
-		order[CONTENT_MD5] = idx;
+		exists[CONTENT_MD5] = 1;
+		order[idx] = CONTENT_MD5 + 1;
 	}
 	else if(strncmp(key,"Content-Range",
 					strlen("Content-Range")) == 0)
 	{
-		order[CONTENT_RANGE] = idx;
+		exists[CONTENT_RANGE] = 1;
+		order[idx] = CONTENT_RANGE + 1;
 	}
 	else if(strncmp(key,"Content-Type",
 					strlen("Content-Type")) == 0)
 	{
-		order[CONTENT_TYPE] = idx;
+		exists[CONTENT_TYPE] = 1;
+		order[idx] = CONTENT_TYPE + 1;
 	}
 	else if(strncmp(key,"Content-Version",
 					strlen("Content-Version")) == 0)
 	{
-		order[CONTENT_VERSION] = idx;
+		exists[CONTENT_VERSION] = 1;
+		order[idx] = CONTENT_VERSION + 1;
 	}
 	else if(strncmp(key,"Date",
 					strlen("Date")) == 0)
 	{
-		order[DATE] = idx;
+		exists[DATE] = 1;
+		order[idx] = DATE + 1;
 	}
 	else if(strncmp(key,"Derived-From",
 					strlen("Derived-From")) == 0)
 	{
-		order[DERIVED_FROM] = idx;
+		exists[DERIVED_FROM] = 1;
+		order[idx] = DERIVED_FROM + 1;
 	}
 	else if(strncmp(key,"Expires",
 					strlen("Expires")) == 0)
 	{
-		order[EXPIRES] = idx;
+		exists[EXPIRES] = 1;
+		order[idx] = EXPIRES + 1;
 	}
 	else if(strncmp(key,"Forwarded",
 					strlen("Forwarded")) == 0)
 	{
-		order[FORWARDED] = idx;
+		exists[FORWARDED] = 1;
+		order[idx] = FORWARDED + 1;
 	}
 	else if(strncmp(key,"From",
 					strlen("From")) == 0)
 	{
-		order[FROM] = idx;
+		exists[FROM] = 1;
+		order[idx] = FROM + 1;
 	}
 	else if(strncmp(key,"Host",
 					strlen("Host")) == 0)
 	{
-		order[HOST] = idx;
+		exists[HOST] = 1;
+		order[idx] = HOST + 1;
 	}
 	else if(strncmp(key,"If-Modified-Since",
 					strlen("If-Modified-Since")) == 0)
 	{
-		order[IF_MODIFIED_SINCE] = idx;
+		exists[IF_MODIFIED_SINCE] = 1;
+		order[idx] = IF_MODIFIED_SINCE + 1;
 	}
 	else if(strncmp(key,"Keep-Alive",
 					strlen("Keep-Alive")) == 0)
 	{
-		order[KEEP_ALIVE] = idx;
+		exists[KEEP_ALIVE] = 1;
+		order[idx] = KEEP_ALIVE + 1;
 	}
 	else if(strncmp(key,"Last-Modified",
 					strlen("Last-Modified")) == 0)
 	{
-		order[LAST_MODIFIED] = idx;
+		exists[LAST_MODIFIED] = 1;
+		order[idx] = LAST_MODIFIED + 1;
 	}
 	else if(strncmp(key,"Link",
 					strlen("Link")) == 0)
 	{
-		order[LINK] = idx;
+		exists[LINK] = 1;
+		order[idx] = LINK + 1;
 	}
 	else if(strncmp(key,"Location",
 					strlen("Location")) == 0)
 	{
-		order[LOCATION] = idx;
+		exists[LOCATION] = 1;
+		order[idx] = LOCATION + 1;
 	}
 	else if(strncmp(key,"MIME-Version",
 					strlen("MIME-Version")) == 0)
 	{
-		order[MIME_VERSION] = idx;
+		exists[MIME_VERSION] = 1;
+		order[idx] = MIME_VERSION + 1;
 	}
 	else if(strncmp(key,"Pragma",
 					strlen("Pragma")) == 0)
 	{
-		order[PRAGMA] = idx;
+		exists[PRAGMA] = 1;
+		order[idx] = PRAGMA + 1;
 	}
 	else if(strncmp(key,"Proxy-Authenticate",
 					strlen("Proxy-Authenticate")) == 0)
 	{
-		order[PROXY_AUTHENTICATE] = idx;
+		exists[PROXY_AUTHENTICATE] = 1;
+		order[idx] = PROXY_AUTHENTICATE + 1;
 	}
 	else if(strncmp(key,"Proxy-Authorization",
 					strlen("Proxy-Authorization")) == 0)
 	{
-		order[PROXY_AUTHORIZATION] = idx;
+		exists[PROXY_AUTHORIZATION] = 1;
+		order[idx] = PROXY_AUTHORIZATION + 1;
 	}
 	else if(strncmp(key,"Public",
 					strlen("Public")) == 0)
 	{
-		order[PUBLIC] = idx;
+		exists[PUBLIC] = 1;
+		order[idx] = PUBLIC + 1;
 	}
 	else if(strncmp(key,"Range",
 					strlen("Range")) == 0)
 	{
-		order[RANGE] = idx;
+		exists[RANGE] = 1;
+		order[idx] = RANGE + 1;
 	}
 	else if(strncmp(key,"Referer",
 					strlen("Referer")) == 0)
 	{
-		order[REFERER] = idx;
+		exists[REFERER] = 1;
+		order[idx] = REFERER + 1;
 	}
 	else if(strncmp(key,"Refresh",
 					strlen("Refresh")) == 0)
 	{
-		order[REFRESH] = idx;
+		exists[REFRESH] = 1;
+		order[idx] = REFRESH + 1;
 	}
 	else if(strncmp(key,"Retry-After",
 					strlen("Retry-After")) == 0)
 	{
-		order[RETRY_AFTER] = idx;
+		exists[RETRY_AFTER] = 1;
+		order[idx] = RETRY_AFTER + 1;
 	}
 	else if(strncmp(key,"Server",
 					strlen("Server")) == 0)
 	{
-		order[SERVER] = idx;
+		exists[SERVER] = 1;
+		order[idx] = SERVER + 1;
 	}
 	else if(strncmp(key,"Title",
 					strlen("Title")) == 0)
 	{
-		order[TITLE] = idx;
+		exists[TITLE] = 1;
+		order[idx] = TITLE + 1;
 	}
 	else if(strncmp(key,"Transfer Encoding",
 					strlen("Transfer Encoding")) == 0)
 	{
-		order[TRANSFER_ENCODING] = idx;
+		exists[TRANSFER_ENCODING] = 1;
+		order[idx] = TRANSFER_ENCODING + 1;
 	}
 	else if(strncmp(key,"Unless",
 					strlen("Unless")) == 0)
 	{
-		order[UNLESS] = idx;
+		exists[UNLESS] = 1;
+		order[idx] = UNLESS + 1;
 	}
 	else if(strncmp(key,"Upgrade",
 					strlen("Upgrade")) == 0)
 	{
-		order[UPGRADE] = idx;
+		exists[UPGRADE] = 1;
+		order[idx] = UPGRADE + 1;
 	}
 	else if(strncmp(key,"URI",
 					strlen("URI")) == 0)
 	{
-		order[URI] = idx;
+		exists[URI] = 1;
+		order[idx] = URI + 1;
 	}
 	else if(strncmp(key,"User-Agent",
 					strlen("User-Agent")) == 0)
 	{
-		order[USER_AGENT] = idx;
+		exists[USER_AGENT] = 1;
+		order[idx] = USER_AGENT + 1;
 	}
 	else if(strncmp(key,"WWW-Authenticate",
 					strlen("WWW-Authenticate")) == 0)
 	{
-		order[WWW_AUTHENTICATE] = idx;
+		exists[WWW_AUTHENTICATE] = 1;
+		order[idx] = WWW_AUTHENTICATE + 1;
 	}
 	++inc;
 }
@@ -484,17 +551,80 @@ static void iter(const char *key,
 	printf("\tkey: %s\tvalue: %s\n", key, value);
 }
 
+void write_files(char *c, char *o) {
+    struct label *l;
+	unsigned int i, num = 0;
+	char buf[1000]; // note that this limits the UA to 1000 chars
+
+	
+	FILE *csv = fopen(c, "w");
+	if (csv == NULL) {
+		perror("fopen");
+		exit(EXIT_FAILURE);
+	}
+
+	FILE *out = fopen(o, "w");
+	if (out == NULL) {
+		perror("fopen");
+		exit(EXIT_FAILURE);
+	}
+
+
+    for (l=hmap; l != NULL; l = l->hh.next) {
+		/* zero the arrays to clear the last iteration */
+		memset(exists, 0, HTTP_MAX_FIELDS * sizeof(int));
+		memset(order, 0, HTTP_MAX_FIELDS * sizeof(int));
+
+		fprintf(csv, "%d,", l->num);
+		sm_enum(l->sm, sigify, &num);
+		num += l->num;
+
+		/* Did it exist in the header fields? */
+		for (i = 0; i < HTTP_MAX_FIELDS; i++) {
+			fprintf(csv, "%d,",exists[i]);
+		}
+		/* What order did they show up in? */
+		for (i = 0; i < HTTP_MAX_FIELDS - 1; i++) {
+			fprintf(csv, "%d,",order[i]);
+		}
+		++i;
+		fprintf(csv, "%d\n",order[i]);
+
+		if (sm_get(l->sm, "User-Agent", buf, sizeof(buf)) != 0) {
+			fprintf(out, "%s\n", buf);
+		} else {
+			fprintf(out, "%s\n", "User-Agent string was not found in the header fields");
+		}
+    }
+
+	if (fclose(csv) != 0) {
+		perror("fclose");
+		exit(EXIT_FAILURE);
+	}
+
+	if (fclose(out) != 0) {
+		perror("fclose");
+		exit(EXIT_FAILURE);
+	}
+}
+
 void print_csv() {
     struct label *l;
 	unsigned int i, num = 0;
     for (l=hmap; l != NULL; l = l->hh.next) {
-		zero_arr();
+		/* zero the arrays to clear the last iteration */
+		memset(exists, 0, HTTP_MAX_FIELDS * sizeof(int));
+		memset(order, 0, HTTP_MAX_FIELDS * sizeof(int));
 
-		printf("%d,%d:",l->id, l->num);
+		printf("%d,", l->num);
 		sm_enum(l->sm, sigify, &num);
 		num += l->num;
 
-		/* Did it exist in the header fields? What index was it at? */
+		/* Did it exist in the header fields? */
+		for (i = 0; i < HTTP_MAX_FIELDS; i++) {
+			printf("%d,",exists[i]);
+		}
+		/* What order did they show up in? */
 		for (i = 0; i < HTTP_MAX_FIELDS - 1; i++) {
 			printf("%d,",order[i]);
 		}
@@ -524,7 +654,6 @@ void print_stats() {
 
 void cleanup() {
 	struct label *l, *tmp;
-
 	HASH_ITER(hh, hmap, l, tmp) {
 		sm_delete(l->sm);
 		HASH_DEL(hmap, l);  
@@ -533,20 +662,38 @@ void cleanup() {
 }
 
 void usage() {
-    printf("%s\n","Usage:  extract pcap");
+    printf("%s\n","Usage: extract pcap [csv] [out]");
     printf("\t%s\n","<pcap> is a saved packet capture file");
+	printf("\t%s\n","<csv> is the name of the output file containing the CSV HTTP signatures");
+    printf("\t%s\n","<out> is the name of the output file containing the User-Agent strings");
 }
 
 int main(int argc, char **argv) {
     pcap_t *handle;
     char errbuf[PCAP_ERRBUF_SIZE];
     char prestr[80];
+	char out[100], csv[100];
 
-    if (argc != 2) {
+	memset(out, 0, 100);
+	memset(csv, 0, 100);	
+
+    if (argc < 2 || argc > 4) {
         usage();
         exit(EXIT_FAILURE);
     }
-    
+
+	if (argc > 2) {
+		strncpy(csv, argv[2], strlen(argv[2]));
+		if (argc == 4) {
+			strncpy(out, argv[3], strlen(argv[3]));
+		} else {
+			strncpy(out, "user_agent", strlen("user_agent"));
+		}
+	} else {
+		strncpy(csv, "http_sigs", strlen("http_sigs"));
+		strncpy(out, "user_agent", strlen("user_agent"));
+	}
+	
     if ((handle = pcap_open_offline(argv[1], errbuf)) == NULL) {
         perror("pcap_open_offline");
         exit(EXIT_FAILURE);
@@ -560,14 +707,8 @@ int main(int argc, char **argv) {
 
     pcap_close(handle);
 
-    /* print_hmap(); */
-    /* print_stats(); */
-	/* printf("\n"); */
-	print_csv();
-	printf("\n");
+	write_files(csv, out);
 	print_stats();
-	printf("\n");
-
 
 	cleanup();
 
