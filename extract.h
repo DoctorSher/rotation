@@ -19,7 +19,7 @@ uint32_t ualist[16] = { 1919251317, 1382380405, 1917154165, 1380283253, 19192431
 
 struct label {
     int            id;      // each labels unique ID
-	int            num;     // number of header fields
+    int            num;     // number of header fields
     uint32_t       ipaddr;  // the src IP address
     StrMap         *sm;     // associative array for header fields
     UT_hash_handle hh;      // hash handle necessary for UThash
